@@ -1,17 +1,8 @@
 _addon.name = 'OhNoYouDont'
 _addon.author = 'Lorand'
 _addon.command = 'onyd'
-_addon.version = '0.6'
-_addon.lastUpdate = '2015.02.12'
-
---[[
-	TODO:
-	- Turn back around after mob finishes using gaze attack
-	- Stun
-	- Target by <t>, <bt>, or /as <player>
-	- Interpret "<t>" as windower.ffxi.get_mob_by_target()
-	- Save/load settings
---]]
+_addon.version = '0.7'
+_addon.lastUpdate = '2015.03.13'
 
 require('luau')
 local res = require('resources')
@@ -20,6 +11,7 @@ local rarr = string.char(129,168)
 
 local abil_start_ids = S{43,326,675}
 local spell_start_ids = S{3,327,716}
+local start_ids = abil_start_ids:union(spell_start_ids)
 
 local msgMap = {['turn']='turn for',['stun']='stun'}
 
@@ -45,9 +37,9 @@ windower.register_event('addon command', function (command,...)
 	command = command and command:lower() or 'help'
 	local args = {...}
 	
-	if command == 'reload' then
+	if (command == 'reload') then
 		windower.send_command('lua reload '.._addon.name)
-	elseif command == 'unload' then
+	elseif (command == 'unload') then
 		windower.send_command('lua unload '.._addon.name)
 	elseif S{'load','profile'}:contains(command) then
 		if (args[1] ~= nil) then
@@ -66,7 +58,7 @@ windower.register_event('addon command', function (command,...)
 	elseif S{'disable','off','stop'}:contains(command) then
 		enabled = false
 		atc('Disabled.')
-	elseif command == 'status' then
+	elseif (command == 'status') then
 		print_status()
 	else
 		atc('ERROR: Unknown command')
@@ -76,6 +68,7 @@ end)
 function loadProfile(pname)
 	profile.name = pname
 	profile.stun = S{}
+	profile.stun_s = S{}
 	profile.turn = S{}
 	for action,skills in pairs(settings.profile[pname]) do
 		for _,skill in pairs(skills) do
@@ -83,7 +76,12 @@ function loadProfile(pname)
 			if (mabil ~= nil) then
 				profile[action]:add(mabil.id)
 			else
-				atc('ERROR: Unable to '..msgMap[action]..' '..skill)
+				local spell = res.spells:with('en', skill)
+				if (spell ~= nil) then
+					profile.stun_s:add(spell.id)
+				else
+					atc('ERROR: Unable to '..msgMap[action]..' '..skill)
+				end
 			end
 		end
 	end
@@ -95,66 +93,75 @@ function print_status()
 	local etxt = enabled and 'ACTIVE' or 'DISABLED'
 	atc('Profile loaded: '..pname..' ['..etxt..']')
 	
-	--printTable(profile.stun, 'profile.stun')
-	
-	local stunning = ''
-	local c = 0
+	local stunning = profile.stun:format('list')
 	for abilid,_ in pairs(profile.stun) do
-		local mabil = res.monster_abilities[abilid].en
-		if c > 0 then
-			stunning = stunning..', '
-		end
-		stunning = stunning..mabil
-		c = c + 1
+		stunning = stunning:gsub(abilid, res.monster_abilities[abilid].en)
 	end
-	if stunning == '' then
-		stunning = '(nothing)'
-	end
-	atc('Stunning: '..stunning)
 	
-	local turning = ''
-	c = 0
+	local stunning_s = profile.stun_s:format('list')
+	for abilid,_ in pairs(profile.stun_s) do
+		stunning_s = stunning_s:gsub(abilid, res.spells[abilid].en)
+	end
+	
+	local turning = profile.turn:format('list')
 	for abilid,_ in pairs(profile.turn) do
-		local mabil = res.monster_abilities[abilid].en
-		if c > 0 then
-			turning = turning..', '
-		end
-		turning = turning..mabil
-		c = c + 1
+		turning = turning:gsub(abilid, res.monster_abilities[abilid].en)
 	end
-	if turning == '' then
-		turning = '(nothing)'
+	
+	if (stunning_s ~= '') then
+		stunning = (stunning ~= '') and stunning..', ' or stunning
+		stunning = stunning..stunning_s
 	end
+	stunning = (stunning == '') and '(nothing)' or stunning
+	turning = (turning == '') and '(nothing)' or turning
+	
+	atc('Stunning: '..stunning)
 	atc('Turning for: '..turning)
+end
+
+function getStunCommand()
+	local player = windower.ffxi.get_player()
+	if S{'BLM','DRK'}:contains(player.main_job) or S{'BLM','DRK'}:contains(player.sub_job) then
+		return '/ma Stun <t>'
+	elseif S{player.main_job,player.sub_job}:contains('DNC') then
+		return '/ja "Violent Flourish" <t>'
+	else
+		atc('ERROR: Job combo has no abilities available to stun '..abilname)
+		return nil
+	end
+end
+
+function attemptStun(abilname)
+	local stunCmd = getStunCommand()
+	if (stunCmd ~= nil) then
+		windower.send_command('input '..stunCmd)
+		atc(123, '===============> STUNNING '..abilname..' <===============')
+	end
 end
 
 function processAction(m_id, a_id)
 	if abil_start_ids:contains(m_id) then
-		local player = windower.ffxi.get_player()
-		local target = windower.ffxi.get_mob_by_target()
 		local mabil = res.monster_abilities[a_id]
 		local abilname = mabil and mabil.en or '(unknown)'
-		
 		if profile.turn:contains(a_id) then
+			local target = windower.ffxi.get_mob_by_target()
 			windower.ffxi.turn(target.facing)
-			atc('Alert: Turning for '..abilname..'!')
+			atc(123,'Alert: Turning for '..abilname..'!')
 			return true
 		elseif profile.stun:contains(a_id) then
-			local stunCmd = ''
-			if S{'BLM','DRK'}:contains(player.main_job) or S{'BLM','DRK'}:contains(player.sub_job) then
-				stunCmd = '/ma Stun <t>'
-			elseif S{player.main_job,player.sub_job}:contains('DNC') then
-				stunCmd = '/ja "Violent Flourish" <t>'
-			else
-				atc('ERROR: Job combo has no abilities available to stun '..abilname)
-			end
-			if (#stunCmd > 1) then
-				windower.send_command('input '..stunCmd)
-				atc(123, '===============> STUNNING '..abilname..' <===============')
-			end
+			attemptStun(abilname)
 			return true
 		else
 			atcd('No action to perform for '..abilname..' [id: '..a_id..']')
+		end
+	elseif spell_start_ids:contains(m_id) then
+		local spell = res.spells[a_id]
+		local sname = spell and spell.en or '(unknown)'
+		if profile.stun_s:contains(a_id) then
+			attemptStun(sname)
+			return true
+		else
+			atcd('No action to perform for '..sname..' [id: '..a_id..']')
 		end
 	end
 	return false	
@@ -165,15 +172,13 @@ windower.register_event('incoming chunk', function(id, data)
 		local ai = get_action_info(id, data)
 		local actor = windower.ffxi.get_mob_by_id(ai.actor_id)
 		local target = windower.ffxi.get_mob_by_target()
-		if (actor.is_npc) and (target ~= nil) and (target.id == ai.actor_id) then
+		if (actor ~= nil) and (actor.is_npc) and (target ~= nil) and (target.id == ai.actor_id) then
 			for _,targ in pairs(ai.targets) do
 				for _,tact in pairs(targ.actions) do
-					if abil_start_ids:contains(tact.message_id) then
-						--if processAction(tact.message_id, ai.param) then
+					if start_ids:contains(tact.message_id) then
 						if processAction(tact.message_id, tact.param) then
 							return
 						end
-					--elseif spell_start_ids:contains(tact.message_id) then
 					end
 				end
 			end
@@ -286,34 +291,9 @@ function get_bit_packed(dat_string,start,stop)
 	return newval
 end
 
-function stringify(strTab)
-	if strTab == nil then return nil end
-	if type(strTab) == 'table' then
-		local str = ''
-		for i = 1, #strTab, 1 do
-			str = str..strTab[i]
-			if i < #strTab then
-				str = str..' '
-			end
-		end
-		return str
-	else
-		return strTab
-	end
-end
-
 function print_helptext()
 	atc('Commands:')
 	atc('onyd load <profile name> : load profile <profile name>')
-end
-
-function printTable(tbl, header)
-	if header ~= nil then
-		atc('Printing table: '..header)
-	end
-	for k,v in pairs(tbl) do
-		windower.add_to_chat(0, tostring(k)..'  :  '..tostring(v))
-	end
 end
 
 function atc(c, msg)

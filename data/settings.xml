@@ -17,6 +17,31 @@
                     <4>Wings of Agony</4>
                 </stun>
             </celaeno>
+            <delve>
+                <turn>
+                    <1>Mortal Blast</1>
+                </turn>
+            </delve>
+            <general>
+                <stun>
+                    <1>Breakga</1>
+                    <2>Silence</2>
+                </stun>
+            </general>
+            <kamihr>
+                <stun>
+                    <1>Biting Abrogation</1>
+                    <2>Glassy Nova</2>
+                    <3>Glacial Tomb</3>
+                    <4>Permafrost Requiem</4>
+                </stun>
+            </kamihr>
+            <meebles>
+                <stun>
+                    <1>Mandible Massacre</1>
+                    <2>Sticky Situation</2>
+                </stun>
+            </meebles>
             <shark>
                 <stun>
                     <1>Protolithic Puncture</1>
