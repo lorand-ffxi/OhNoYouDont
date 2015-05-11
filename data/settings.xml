@@ -9,6 +9,20 @@
                     <3>Stinger Volley</3>
                 </stun>
             </bee>
+            <beepre>
+                <stun>
+                    <1>Blackout</1>
+                    <10>Breakga</10>
+                    <2>Paralyga</2>
+                    <3>Silencega</3>
+                    <4>Dispelga</4>
+                    <5>Orthopterror</5>
+                    <6>Hell Scissors</6>
+                    <7>Stasis</7>
+                    <8>Booming Bombination</8>
+                    <9>Emetic Discharge</9>
+                </stun>
+            </beepre>
             <celaeno>
                 <stun>
                     <1>Typhoean Rage</1>
@@ -42,6 +56,24 @@
                     <2>Sticky Situation</2>
                 </stun>
             </meebles>
+            <ork>
+                <stun>
+                    <1>Guilded Torpor</1>
+                    <10>Graviga</10>
+                    <11>Raksha: Judgment</11>
+                    <12>Raksha: Illusion</12>
+                    <13>Raksha: Vengeance</13>
+                    <14>Beastruction</14>
+                    <2>Death Trap</2>
+                    <3>Calcifying Claw</3>
+                    <4>Deadening Haze</4>
+                    <5>Atramentous Libations</5>
+                    <6>Villainous Rebuke</6>
+                    <7>Hemorrhaze</7>
+                    <8>Silencega</8>
+                    <9>Orthopterror</9>
+                </stun>
+            </ork>
             <shark>
                 <stun>
                     <1>Protolithic Puncture</1>
@@ -116,6 +148,13 @@
                 </stun>
             </treepre>
             <vw>
+                <stun>
+                    <1>Rhinowrecker</1>
+                    <2>Crippling Slam</2>
+                    <3>Cloudscourge</3>
+                    <4>Wisecrack</4>
+                    <5>Whiteout</5>
+                </stun>
                 <turn>
                     <1>Shah Mat</1>
                 </turn>
