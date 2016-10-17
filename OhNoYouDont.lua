@@ -1,54 +1,61 @@
 _addon.name = 'OhNoYouDont'
 _addon.author = 'Lorand'
 _addon.command = 'onyd'
-_addon.version = '0.7'
-_addon.lastUpdate = '2015.03.13'
+_addon.version = '0.8.0'
+_addon.lastUpdate = '2016.10.16'
 
 require('luau')
-local res = require('resources')
-local config = require('config')
+require('lor/lor_utils')
+_libs.lor.req('all', {n='strings',v='2016.10.16'})
+_libs.lor.debug = false
+
 local rarr = string.char(129,168)
 
 local abil_start_ids = S{43,326,675}
 local spell_start_ids = S{3,327,716}
-local start_ids = abil_start_ids:union(spell_start_ids)
+start_ids = abil_start_ids:union(spell_start_ids)
 
-local msgMap = {['turn']='turn for',['stun']='stun'}
+local active_tense = {turn='Turning for',stun='Stunning'}
 
-local defaults = {}
-defaults.profile = {}
-defaults.profile.shark = {}
-defaults.profile.shark.stun = {'Protolithic Puncture','Pelagic Cleaver','Tidal Guillotine','Carcharian Verve','Marine Mayhem','Aquatic Lance'}
-local settings = config.load(defaults)
+local defaults = {shark={stun=S{'Protolithic Puncture','Pelagic Cleaver','Tidal Guillotine','Carcharian Verve','Marine Mayhem','Aquatic Lance'}}}
+settings = _libs.lor.settings.load('data/settings.lua', defaults)
 
-local profile = {}
+blu_stun_ids = {623,692,628,669,640}  --Omitted spells with a cast time > 1s
+blu_stun_names = {[623]='Head Butt',[692]='Sudden Lunge',[628]='Frypan',[669]='Whirl of Rage',[640]='Tail Slap'}
+
+profile = {}
 local enabled = false
 local debugging = true
+profiles = {}
+
+local get_action_info = _libs.lor.packets.get_action_info
+
 
 windower.register_event('load', function()
+    load_settings()
 	print_helptext()
 end)
+
 
 windower.register_event('logout', function()
 	windower.send_command('lua unload '.._addon.name)
 end)
 
+
 windower.register_event('addon command', function (command,...)
 	command = command and command:lower() or 'help'
 	local args = {...}
 	
-	if (command == 'reload') then
-		windower.send_command('lua reload '.._addon.name)
-	elseif (command == 'unload') then
-		windower.send_command('lua unload '.._addon.name)
+	if S{'reload','unload'}:contains(command) then
+        windower.send_command('lua %s %s':format(command, _addon.name))
 	elseif S{'load','profile'}:contains(command) then
 		if (args[1] ~= nil) then
-			if (settings.profile[args[1]] ~= nil) then
-				enabled = true
+            if profiles[args[1]] ~= nil then
+                enabled = true
 				loadProfile(args[1])
-			else 
-				atc('ERROR: Profile "'..args[1]..'" does not exist.')
-			end
+            else
+                atcfs(123, 'Error: Unable to find profile: %s', args[1])
+            end
 		else
 			atc('ERROR: No profile name provided to load.')
 		end
@@ -58,114 +65,164 @@ windower.register_event('addon command', function (command,...)
 	elseif S{'disable','off','stop'}:contains(command) then
 		enabled = false
 		atc('Disabled.')
-	elseif (command == 'status') then
+	elseif command == 'status' then
 		print_status()
+    elseif command == 'info' then
+        if not _libs.lor.exec then
+            atc(3,'Unable to parse info.  Windower/addons/libs/lor/lor_exec.lua was unable to be loaded.')
+            atc(3,'If you would like to use this function, please visit https://github.com/lorand-ffxi/lor_libs to download it.')
+            return
+        end
+        local cmd = args[1]     --Take the first element as the command
+        table.remove(args, 1)   --Remove the first from the list of args
+        _libs.lor.exec.process_input(cmd, args)
 	else
-		atc('ERROR: Unknown command')
+		atc(123, 'ERROR: Unknown command')
 	end
 end)
 
+
+function load_settings()
+    local res_types = S{'monster_abilities','spells'}
+    local norm_res = {}
+    for rtype,_ in pairs(res_types) do
+        norm_res[rtype] = {}
+        for id, action in pairs(res[rtype]) do
+            local aname = action.en
+            local aname_l = aname:lower()
+            norm_res[rtype][aname_l] = norm_res[rtype][aname_l] or {name=aname,ids=S{}}
+            norm_res[rtype][aname_l].ids:add(id)
+        end
+    end
+    
+    for profile_name, profile in pairs(settings) do
+        profiles[profile_name] = {}
+        for player_action, mob_actions in pairs(profile) do
+            profiles[profile_name][player_action] = {monster_abilities={},spells={}}
+            for mob_action,_ in pairs(mob_actions) do
+                local ma = mob_action:lower()
+                local found_count = 0
+                for rtype,_ in pairs(res_types) do
+                    local mabil = norm_res[rtype][ma]
+                    if mabil ~= nil then
+                        for id,_ in pairs(mabil.ids) do
+                            profiles[profile_name][player_action][rtype][id] = mabil.name
+                            found_count = found_count + 1
+                        end
+                    end
+                end
+                
+                if found_count < 1 then
+                    atcfs(123, 'Unable to find "%s" in resources!', mob_action)
+                end
+            end
+        end
+    end
+end
+
+
 function loadProfile(pname)
-	profile.name = pname
-	profile.stun = S{}
-	profile.stun_s = S{}
-	profile.turn = S{}
-	for action,skills in pairs(settings.profile[pname]) do
-		for _,skill in pairs(skills) do
-			local mabil = res.monster_abilities:with('en', skill)
-			if (mabil ~= nil) then
-				profile[action]:add(mabil.id)
-			else
-				local spell = res.spells:with('en', skill)
-				if (spell ~= nil) then
-					profile.stun_s:add(spell.id)
-				else
-					atc('ERROR: Unable to '..msgMap[action]..' '..skill)
-				end
-			end
-		end
-	end
+    profile = profiles[pname]
+    profile.name = pname
 	print_status()
 end
+
 
 function print_status()
 	local pname = profile.name or '(none)'
 	local etxt = enabled and 'ACTIVE' or 'DISABLED'
 	atc('Profile loaded: '..pname..' ['..etxt..']')
 	
-	local stunning = profile.stun:format('list')
-	for abilid,_ in pairs(profile.stun) do
-		stunning = stunning:gsub(abilid, res.monster_abilities[abilid].en)
-	end
-	
-	local stunning_s = profile.stun_s:format('list')
-	for abilid,_ in pairs(profile.stun_s) do
-		stunning_s = stunning_s:gsub(abilid, res.spells[abilid].en)
-	end
-	
-	local turning = profile.turn:format('list')
-	for abilid,_ in pairs(profile.turn) do
-		turning = turning:gsub(abilid, res.monster_abilities[abilid].en)
-	end
-	
-	if (stunning_s ~= '') then
-		stunning = (stunning ~= '') and stunning..', ' or stunning
-		stunning = stunning..stunning_s
-	end
-	stunning = (stunning == '') and '(nothing)' or stunning
-	turning = (turning == '') and '(nothing)' or turning
-	
-	atc('Stunning: '..stunning)
-	atc('Turning for: '..turning)
+    local _profile = profiles[pname]
+    for paction, msg in pairs(active_tense) do
+        if _profile[paction] ~= nil then
+            local action_set = S{}
+            for _,group in pairs(_profile[paction]) do
+                for id, name in pairs(group) do
+                    action_set:add(name)
+                end
+            end
+            atcfs('%s: %s', msg, ', ':join(action_set))
+        else
+            atcfs('%s: (nothing)', msg)
+        end
+    end
 end
 
-function getStunCommand()
+
+function get_stun_cmd(action_name)
 	local player = windower.ffxi.get_player()
 	if S{'BLM','DRK'}:contains(player.main_job) or S{'BLM','DRK'}:contains(player.sub_job) then
 		return '/ma Stun <t>'
 	elseif S{player.main_job,player.sub_job}:contains('DNC') then
 		return '/ja "Violent Flourish" <t>'
+    elseif player.main_job == 'BLU' then
+        local set_spells = S(windower.ffxi.get_mjob_data().spells)
+        local recast_ms = windower.ffxi.get_spell_recasts()
+        for _,id in pairs(blu_stun_ids) do
+            if set_spells:contains(id) and (recast_ms[id] == 0) then
+                return '/ma "%s" <t>':format(blu_stun_names[id])
+            end
+        end
+        atcfs(123, 'ERROR: Unable to find a BLU spell that is ready to stun %s', action_name)
+        return nil
 	else
-		atc('ERROR: Job combo has no abilities available to stun '..abilname)
+		atcfs(123, 'ERROR: Job combo has no abilities available to stun %s', action_name)
 		return nil
 	end
 end
 
-function attemptStun(abilname)
-	local stunCmd = getStunCommand()
-	if (stunCmd ~= nil) then
-		windower.send_command('input '..stunCmd)
-		atc(123, '===============> STUNNING '..abilname..' <===============')
+
+function attempt_stun(action_name)
+	local stun_cmd = get_stun_cmd(action_name)
+	if (stun_cmd ~= nil) then
+		windower.send_command('input '..stun_cmd)
+		atcfs(123, '===============> STUNNING %s <===============', action_name)
 	end
 end
 
+
 function processAction(m_id, a_id)
+    --profile[turn|stun][monster_abilities|spells][id] = mabil.name
 	if abil_start_ids:contains(m_id) then
-		local mabil = res.monster_abilities[a_id]
-		local abilname = mabil and mabil.en or '(unknown)'
-		if profile.turn:contains(a_id) then
-			local target = windower.ffxi.get_mob_by_target()
-			windower.ffxi.turn(target.facing)
-			atc(123,'Alert: Turning for '..abilname..'!')
-			return true
-		elseif profile.stun:contains(a_id) then
-			attemptStun(abilname)
-			return true
-		else
-			atcd('No action to perform for '..abilname..' [id: '..a_id..']')
-		end
+        if profile.turn ~= nil then
+            local turn_name = profile.turn.monster_abilities[a_id]
+            if turn_name ~= nil then
+                local target = windower.ffxi.get_mob_by_id(a_id)
+                if target ~= nil then
+                    windower.ffxi.turn(target.facing)
+                    atcfs(258, 'Alert: Turned around for %s!', turn_name)
+                    return true
+                else
+                    atcfs(123, 'Error: Unable to find target to turn for %s', turn_name)
+                    return false
+                end
+            end
+        end
+    
+        local stun_name = profile.stun.monster_abilities[a_id]
+        if stun_name ~= nil then
+            attempt_stun(stun_name)
+            return true
+        end
+        
+        local mabil = res.monster_abilities[a_id]
+        local abilname = mabil and mabil.en or '(unknown)'
+        atcd('No action to perform for %s [id: %s]', abilname, a_id)
 	elseif spell_start_ids:contains(m_id) then
+        local stun_name = profile.stun.spells[a_id]
+        if stun_name ~= nil then
+            attempt_stun(stun_name)
+            return true
+        end
+        
 		local spell = res.spells[a_id]
 		local sname = spell and spell.en or '(unknown)'
-		if profile.stun_s:contains(a_id) then
-			attemptStun(sname)
-			return true
-		else
-			atcd('No action to perform for '..sname..' [id: '..a_id..']')
-		end
+        atcd('No action to perform for %s [id: %s]', sname, a_id)
 	end
 	return false	
 end
+
 
 windower.register_event('incoming chunk', function(id, data)
 	if enabled and (id == 0x28) then
@@ -186,133 +243,22 @@ windower.register_event('incoming chunk', function(id, data)
 	end
 end)
 
---[[
-	Parse the given packet and construct a table to make its contents useful.
-	Based on the 'incoming chunk' function in the Battlemod addon (thanks to Byrth / SnickySnacks)
-	@param id packet ID
-	@param data raw packet contents
-	@return a table representing the given packet's data
---]]
-function get_action_info(id, data)
-	local pref = data:sub(1,4)
-	local data = data:sub(5)
-	if id == 0x28 then			-------------- ACTION PACKET ---------------
-		local act = {}
-		act.do_not_need	= get_bit_packed(data,0,8)
-		act.actor_id	= get_bit_packed(data,8,40)
-		act.target_count= get_bit_packed(data,40,50)
-		act.category	= get_bit_packed(data,50,54)
-		act.param	= get_bit_packed(data,54,70)
-		act.unknown	= get_bit_packed(data,70,86)
-		act.recast	= get_bit_packed(data,86,118)
-		act.targets = {}
-		local offset = 118
-		for i = 1, act.target_count do
-			act.targets[i] = {}
-			act.targets[i].id = get_bit_packed(data,offset,offset+32)
-			act.targets[i].action_count = get_bit_packed(data,offset+32,offset+36)
-			offset = offset + 36
-			act.targets[i].actions = {}
-			for n = 1,act.targets[i].action_count do
-				act.targets[i].actions[n] = {}
-				act.targets[i].actions[n].reaction	= get_bit_packed(data,offset,offset+5)
-				act.targets[i].actions[n].animation	= get_bit_packed(data,offset+5,offset+16)
-				act.targets[i].actions[n].effect	= get_bit_packed(data,offset+16,offset+21)
-				act.targets[i].actions[n].stagger	= get_bit_packed(data,offset+21,offset+27)
-				act.targets[i].actions[n].param		= get_bit_packed(data,offset+27,offset+44)
-				act.targets[i].actions[n].message_id	= get_bit_packed(data,offset+44,offset+54)
-				act.targets[i].actions[n].unknown	= get_bit_packed(data,offset+54,offset+85)
-				act.targets[i].actions[n].has_add_efct	= get_bit_packed(data,offset+85,offset+86)
-				offset = offset + 86
-				if act.targets[i].actions[n].has_add_efct == 1 then
-					act.targets[i].actions[n].has_add_efct		= true
-					act.targets[i].actions[n].add_efct_animation	= get_bit_packed(data,offset,offset+6)
-					act.targets[i].actions[n].add_efct_effect	= get_bit_packed(data,offset+6,offset+10)
-					act.targets[i].actions[n].add_efct_param	= get_bit_packed(data,offset+10,offset+27)
-					act.targets[i].actions[n].add_efct_message_id	= get_bit_packed(data,offset+27,offset+37)
-					offset = offset + 37
-				else
-					act.targets[i].actions[n].has_add_efct		= false
-					act.targets[i].actions[n].add_efct_animation	= 0
-					act.targets[i].actions[n].add_efct_effect	= 0
-					act.targets[i].actions[n].add_efct_param	= 0
-					act.targets[i].actions[n].add_efct_message_id	= 0
-				end
-				act.targets[i].actions[n].has_spike_efct = get_bit_packed(data,offset,offset+1)
-				offset = offset + 1
-				if act.targets[i].actions[n].has_spike_efct == 1 then
-					act.targets[i].actions[n].has_spike_efct	= true
-					act.targets[i].actions[n].spike_efct_animation	= get_bit_packed(data,offset,offset+6)
-					act.targets[i].actions[n].spike_efct_effect	= get_bit_packed(data,offset+6,offset+10)
-					act.targets[i].actions[n].spike_efct_param	= get_bit_packed(data,offset+10,offset+24)
-					act.targets[i].actions[n].spike_efct_message_id	= get_bit_packed(data,offset+24,offset+34)
-					offset = offset + 34
-				else
-					act.targets[i].actions[n].has_spike_efct	= false
-					act.targets[i].actions[n].spike_efct_animation	= 0
-					act.targets[i].actions[n].spike_efct_effect	= 0
-					act.targets[i].actions[n].spike_efct_param	= 0
-					act.targets[i].actions[n].spike_efct_message_id	= 0
-				end
-			end
-		end
-		return act
-	elseif id == 0x29 then		----------- ACTION MESSAGE ------------
-		local am = {}
-		am.actor_id	= get_bit_packed(data,0,32)
-		am.target_id	= get_bit_packed(data,32,64)
-		am.param_1	= get_bit_packed(data,64,96)
-		am.param_2	= get_bit_packed(data,96,106)	-- First 6 bits
-		am.param_3	= get_bit_packed(data,106,128)	-- Rest
-		am.actor_index	= get_bit_packed(data,128,144)
-		am.target_index	= get_bit_packed(data,144,160)
-		am.message_id	= get_bit_packed(data,160,175)	-- Cut off the most significant bit, hopefully
-		return am
-	end
-end
-
-function get_bit_packed(dat_string,start,stop)
-	--Copied from Battlemod; thanks to Byrth / SnickySnacks
-	local newval = 0   
-	local c_count = math.ceil(stop/8)
-	while c_count >= math.ceil((start+1)/8) do
-		local cur_val = dat_string:byte(c_count)
-		local scal = 256
-		if c_count == math.ceil(stop/8) then
-			cur_val = cur_val%(2^((stop-1)%8+1))
-		end
-		if c_count == math.ceil((start+1)/8) then
-			cur_val = math.floor(cur_val/(2^(start%8)))
-			scal = 2^(8-start%8)
-		end
-		newval = newval*scal + cur_val
-		c_count = c_count - 1
-	end
-	return newval
-end
 
 function print_helptext()
 	atc('Commands:')
 	atc('onyd load <profile name> : load profile <profile name>')
 end
 
-function atc(c, msg)
-	if (type(c) == 'string') and (msg == nil) then
-		msg = c
-		c = 0
-	end
-	windower.add_to_chat(c, msg)
-end
 
-function atcd(text)
+function atcd(...)
 	if debugging then
-		atc(text)
+		atcfs(...)
 	end
 end
 
 -----------------------------------------------------------------------------------------------------------
 --[[
-Copyright © 2015, Lorand
+Copyright © 2016, Lorand
 All rights reserved.
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
     * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
