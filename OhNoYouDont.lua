@@ -47,7 +47,7 @@ windower.register_event('addon command', function (command,...)
 	local args = {...}
 	
 	if S{'reload','unload'}:contains(command) then
-        windower.send_command('lua %s %s':format(command, _addon.name))
+        windower.send_command(('lua %s %s'):format(command, _addon.name))
 	elseif S{'load','profile'}:contains(command) then
 		if (args[1] ~= nil) then
             if profiles[args[1]] ~= nil then
@@ -142,7 +142,7 @@ function print_status()
                     action_set:add(name)
                 end
             end
-            atcfs('%s: %s', msg, ', ':join(action_set))
+            atcfs('%s: %s', msg, (', '):join(action_set))
         else
             atcfs('%s: (nothing)', msg)
         end
@@ -161,7 +161,7 @@ function get_stun_cmd(action_name)
         local recast_ms = windower.ffxi.get_spell_recasts()
         for _,id in pairs(blu_stun_ids) do
             if set_spells:contains(id) and (recast_ms[id] == 0) then
-                return '/ma "%s" <t>':format(blu_stun_names[id])
+                return ('/ma "%s" <t>'):format(blu_stun_names[id])
             end
         end
         atcfs(123, 'ERROR: Unable to find a BLU spell that is ready to stun %s', action_name)
@@ -258,7 +258,7 @@ end
 
 -----------------------------------------------------------------------------------------------------------
 --[[
-Copyright © 2016, Lorand
+Copyright Â© 2016, Lorand
 All rights reserved.
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
     * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
